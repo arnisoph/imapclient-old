@@ -122,7 +122,7 @@ class IMAPClient(object):
     AbortError = imaplib.IMAP4.abort
     ReadOnlyError = imaplib.IMAP4.readonly
 
-    def __init__(self, host, port=None, use_uid=True, ssl=False, stream=False,
+    def __init__(self, host, port=None, use_uid=True, ssl=False, starttls=False, stream=False,
                  **kwargs):
         if stream:
             if port is not None:
@@ -135,6 +135,7 @@ class IMAPClient(object):
         self.host = host
         self.port = port
         self.ssl = ssl
+        self.starttls = starttls
         self.stream = stream
         self.use_uid = use_uid
         self.folder_encode = True
@@ -157,6 +158,8 @@ class IMAPClient(object):
         """Login using *username* and *password*, returning the
         server response.
         """
+        if self.starttls:
+            self._imap.starttls()
         return self._command_and_check('login', username, password, unpack=True)
 
     def oauth_login(self, url, oauth_token, oauth_token_secret,

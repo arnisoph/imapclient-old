@@ -1,5 +1,9 @@
 Introduction
 ------------
+
+.. image:: https://badges.gitter.im/Join%20Chat.svg
+   :alt: Join the chat at https://gitter.im/bechtoldt/imapclient
+   :target: https://gitter.im/bechtoldt/imapclient?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 IMAPClient is an easy-to-use, Pythonic and complete IMAP client
 library.
 

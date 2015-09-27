@@ -9,29 +9,23 @@ returned by imaplib.
 Initially inspired by http://effbot.org/zone/simple-iterator-parser.htm
 """
 
-#TODO more exact error reporting
+# TODO more exact error reporting
 
 from __future__ import unicode_literals
 
+import re
 import sys
 from collections import defaultdict
-from datetime import datetime
 
-from . import six
-xrange = six.moves.xrange
+import six
 
 from .datetime_util import parse_to_datetime
-from .fixed_offset import FixedOffset
 from .response_lexer import TokenSource
-from .response_types import BodyData, Envelope, Address
+from .response_types import BodyData, Envelope, Address, SearchIds
 
-try:
-    import imaplib2 as imaplib
-except ImportError:
-    imaplib2 = None
-    import imaplib
+xrange = six.moves.xrange
 
-__all__ = ['parse_response', 'ParseError']
+__all__ = ['parse_response', 'parse_message_list', 'ParseError']
 
 
 class ParseError(ValueError):
@@ -46,6 +40,48 @@ def parse_response(data):
     if data == [None]:
         return []
     return tuple(gen_parsed_response(data))
+
+
+_msg_id_pattern = re.compile("(\d+(?: +\d+)*)")
+
+
+def parse_message_list(data):
+    """Parse a list of message ids and return them as a list.
+
+    parse_response is also capable of doing this but this is
+    faster. This also has special handling of the optional MODSEQ part
+    of a SEARCH response.
+
+    The returned list is a SearchIds instance which has a *modseq*
+    attribute which contains the MODSEQ response (if returned by the
+    server).
+    """
+    if len(data) != 1:
+        raise ValueError("unexpected message list data")
+
+    data = data[0]
+    if not data:
+        return SearchIds()
+
+    if six.PY3 and isinstance(data, six.binary_type):
+        data = data.decode('ascii')
+
+    m = _msg_id_pattern.match(data)
+    if not m:
+        raise ValueError("unexpected message list format")
+
+    ids = SearchIds(int(n) for n in m.group(1).split())
+
+    # Parse any non-numeric part on the end using parse_response (this
+    # is likely to be the MODSEQ section).
+    extra = data[m.end(1):]
+    if extra:
+        for item in parse_response([extra.encode('ascii')]):
+            if isinstance(item, tuple) and len(item) == 2 and item[0].lower() == b'modseq':
+                ids.modseq = item[1]
+            elif isinstance(item, int):
+                ids.append(item)
+    return ids
 
 
 def gen_parsed_response(text):
@@ -97,7 +133,7 @@ def parse_fetch_response(text, normalise_times=True, uid_is_key=True):
         msg_data = {b'SEQ': seq}
         for i in xrange(0, len(msg_response), 2):
             word = msg_response[i].upper()
-            value = msg_response[i+1]
+            value = msg_response[i + 1]
 
             if word == b'UID':
                 uid = _int_or_error(value, 'invalid UID')
@@ -127,36 +163,20 @@ def _int_or_error(value, error_text):
 
 
 def _convert_INTERNALDATE(date_string, normalise_times=True):
-    date_msg = b'INTERNALDATE "' + date_string + b'"'
-    mo = imaplib.InternalDate.match(date_msg)
-    if not mo:
-        raise ValueError("couldn't parse date %r" % date_string)
+    try:
+        return parse_to_datetime(date_string, normalise=normalise_times)
+    except ValueError:
+        return None
 
-    zoneh = int(mo.group('zoneh'))
-    zonem = (zoneh * 60) + int(mo.group('zonem'))
-    if mo.group('zonen') == b'-':
-        zonem = -zonem
-    tz = FixedOffset(zonem)
-
-    year = int(mo.group('year'))
-    mon = imaplib.Mon2num[mo.group('mon')]
-    day = int(mo.group('day'))
-    hour = int(mo.group('hour'))
-    min = int(mo.group('min'))
-    sec = int(mo.group('sec'))
-
-    dt = datetime(year, mon, day, hour, min, sec, 0, tz)
-
-    if normalise_times:
-        # Normalise to host system's timezone
-        return dt.astimezone(FixedOffset.for_system()).replace(tzinfo=None)
-    return dt
 
 def _convert_ENVELOPE(envelope_response, normalise_times=True):
+    dt = None
     if envelope_response[0]:
-        dt = parse_to_datetime(envelope_response[0], normalise=normalise_times)
-    else:
-        dt = None
+        try:
+            dt = parse_to_datetime(envelope_response[0], normalise=normalise_times)
+        except ValueError:
+            pass
+
     subject = envelope_response[1]
 
     # addresses contains a tuple of addresses
@@ -178,6 +198,7 @@ def _convert_ENVELOPE(envelope_response, normalise_times=True):
         message_id=envelope_response[9]
     )
 
+
 def atom(src, token):
     if token == b'(':
         return parse_tuple(src)
@@ -187,10 +208,10 @@ def atom(src, token):
         literal_len = int(token[1:-1])
         literal_text = src.current_literal
         if literal_text is None:
-           raise ParseError('No literal corresponds to %r' % token)
+            raise ParseError('No literal corresponds to %r' % token)
         if len(literal_text) != literal_len:
             raise ParseError('Expecting literal of size %d, got %d' % (
-                                literal_len, len(literal_text)))
+                literal_len, len(literal_text)))
         return literal_text
     elif len(token) >= 2 and (token[:1] == token[-1:] == b'"'):
         return token[1:-1]
@@ -198,6 +219,7 @@ def atom(src, token):
         return int(token)
     else:
         return token
+
 
 def parse_tuple(src):
     out = []
@@ -207,6 +229,7 @@ def parse_tuple(src):
         out.append(atom(src, token))
     # no terminator
     raise ParseError('Tuple incomplete before "(%s"' % _fmt_tuple(out))
+
 
 def _fmt_tuple(t):
     return ' '.join(str(item) for item in t)

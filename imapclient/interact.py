@@ -10,7 +10,10 @@ from __future__ import unicode_literals
 from getpass import getpass
 from optparse import OptionParser
 
-from .config import parse_config_file, create_client_from_config
+from six import iteritems
+
+from .config import parse_config_file, create_client_from_config, get_config_defaults
+
 
 def command_line():
     p = OptionParser()
@@ -38,15 +41,17 @@ def command_line():
         # Use the options in the config file
         opts = parse_config_file(opts.file)
     else:
-        # Get compulsory options if not given on the command line
-        for opt_name in ('host', 'username', 'password'):
-            if not getattr(opts, opt_name):
-                setattr(opts, opt_name, getpass(opt_name + ': '))
-        # Options not supported on the command line
-        opts.oauth = False
-        opts.oauth2 = False
-        opts.stream = False
+        # Scan through options, filling in defaults and prompting when
+        # a compulsory option wasn't provided.
+        compulsory_opts = ('host', 'username', 'password')
+        for name, default_value in iteritems(get_config_defaults()):
+            value = getattr(opts, name, default_value)
+            if name in compulsory_opts and value is None:
+                value = getpass(name + ': ')
+            setattr(opts, name, value)
+
     return opts
+
 
 def main():
     opts = command_line()
@@ -67,7 +72,7 @@ def main():
     def builtin(c):
         import code
         code.interact(banner, local=dict(c=c))
-    
+
     for shell_attempt in (ipython_011, ipython_010, builtin):
         try:
             shell_attempt(client)

@@ -1,8 +1,6 @@
-IMAPClient
-==========
-
-.. toctree::
-   :maxdepth: 1
+============
+ IMAPClient
+============
 
 :Author: `Menno Smits <http://freshfoo.com>`_
 :Version: |release|
@@ -31,7 +29,7 @@ explains IMAP in detail. Other RFCs also apply to various extensions
 to the base protocol. These are referred to in the documentation below
 where relevant.
 
-Python versions 2.6, 2.7, 3.2, 3.3 and 3.4 are officially supported.
+Python versions 2.6, 2.7, 3.3 and 3.4 are officially supported.
 
 A Simple Example
 ----------------
@@ -107,12 +105,12 @@ clients to keep track of data related to a message.
 
 The IMAPClient package has constants for a number of commmonly used flags::
 
-    DELETED = r'\Deleted'
-    SEEN = r'\Seen'
-    ANSWERED = r'\Answered'
-    FLAGGED = r'\Flagged'
-    DRAFT = r'\Draft'
-    RECENT = r'\Recent'         # This flag is read-only
+    DELETED = br'\Deleted'
+    SEEN = br'\Seen'
+    ANSWERED = br'\Answered'
+    FLAGGED = br'\Flagged'
+    DRAFT = br'\Draft'
+    RECENT = br'\Recent'         # This flag is read-only
 
 Any method that accepts message flags takes either a sequence
 containing message flags (eg. ``[DELETED, 'foo', 'Bar']``) or a single
@@ -148,6 +146,62 @@ The IMAP related exceptions that will be raised by this class are:
 These are aliases for the imaplib.IMAP4 exceptions of the same name. Socket
 errors may also be raised in the case of network errors.
 
+TLS/SSL
+~~~~~~~
+IMAPClient uses sensible TLS parameter defaults for encrypted
+connections and also allows for a high level of control of TLS
+parameters if required. To provide a consistent API and capabilities
+across Python versions the `backports.ssl <https://github.com/alekstorm/backports.ssl>`_
+library is used instead of the standard library ssl
+package. backports.ssl provides an API that aims to mimic the Python
+3.4 ssl package so it should be familiar to developers that have used
+the ssl package in recent versions of Python.
+
+TLS parameters are controlled by passing a ``backports.ssl.SSLContext``
+when creating an IMAPClient instance. When ``ssl=True`` is used
+without passing a SSLContext, a default context is used. The default
+context avoids the use of known insecure ciphers and SSL protocol
+versions, with certificate verification and hostname verification
+turned on. The default context will use system installed certificate
+authority trust chains, if available.
+
+:py:func:`IMAPClient.tls.create_default_context` returns IMAPClient's
+default context. When constructing a custom context it is usually best
+to start with the default context and modify it to suit your needs.
+
+The following example shows how to to disable certification
+verification and certificate host name checks if required.
+
+.. literalinclude:: ../../imapclient/examples/tls_no_checks.py
+
+The next example shows how to create a context that will use custom CA
+certificate. This is required to perform verification of a self-signed
+certificate used by the IMAP server.
+
+.. literalinclude:: ../../imapclient/examples/tls_cacert.py
+
+The above examples show some of the most common TLS parameter
+customisations but there are many other tweaks are possible. Consult
+the Python 3 :py:mod:`ssl` package documentation for further options.
+
+Using gevent with IMAPClient
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Some extra monkey patching is required to let gevent_ work with
+pyOpenSSL (used by IMAPClient for TLS support). The `gevent_openssl`_
+package performs this patching and can be used with IMAPClient like
+this::
+
+  from gevent import monkey; monkey.patch_all()
+  import gevent_openssl; gevent_openssl.monkey_patch()
+
+  import imapclient
+
+  client = imapclient.IMAPClient(...)
+  ...
+
+.. _gevent: http://www.gevent.org/
+.. _`gevent_openssl`: https://pypi.python.org/pypi/gevent_openssl/
+
 API Reference
 -------------
 
@@ -167,6 +221,12 @@ Various types may be used in the data structures returned by
 are encountered during parsing.
 
 .. automodule:: imapclient.response_types
+   :members:
+
+TLS Support
+~~~~~~~~~~~
+
+.. automodule:: imapclient.tls
    :members:
 
 Interactive Sessions
@@ -225,3 +285,10 @@ External Documentation
 The `Unofficial IMAP Protocol Wiki <http://www.imapwiki.org/>`_ is
 very useful when writing IMAP related software and is highly
 recommended.
+
+Release History
+---------------
+.. toctree::
+   :maxdepth: 1
+
+   releases

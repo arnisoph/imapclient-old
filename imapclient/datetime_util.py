@@ -4,10 +4,13 @@
 
 from __future__ import unicode_literals
 
+import re
 from datetime import datetime
 from email.utils import parsedate_tz
 
 from .fixed_offset import FixedOffset
+
+_SHORT_MONTHS = ' Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')
 
 
 def parse_to_datetime(timestamp, normalise=True):
@@ -19,9 +22,8 @@ def parse_to_datetime(timestamp, normalise=True):
     If normalise is False, then the returned datetime will be
     unadjusted but will contain timezone information as per the input.
     """
-    timestamp = timestamp.decode('latin-1')  # parsedate_tz only works with strings
-    time_tuple = parsedate_tz(timestamp)
-    if time_tuple == None:
+    time_tuple = parsedate_tz(_munge(timestamp))
+    if time_tuple is None:
         raise ValueError("couldn't parse datetime %r" % timestamp)
 
     tz_offset_seconds = time_tuple[-1]
@@ -31,9 +33,40 @@ def parse_to_datetime(timestamp, normalise=True):
 
     dt = datetime(*time_tuple[:6], tzinfo=tz)
     if normalise and tz:
-       dt = datetime_to_native(dt)
+        dt = datetime_to_native(dt)
 
     return dt
 
+
 def datetime_to_native(dt):
     return dt.astimezone(FixedOffset.for_system()).replace(tzinfo=None)
+
+
+def datetime_to_INTERNALDATE(dt):
+    """Convert a datetime instance to a IMAP INTERNALDATE string.
+
+    If timezone information is missing the current system
+    timezone is used.
+    """
+    if not dt.tzinfo:
+        dt = dt.replace(tzinfo=FixedOffset.for_system())
+    return dt.strftime("%d-%b-%Y %H:%M:%S %z")
+
+
+# Matches timestamp strings where the time separator is a dot (see
+# issue #154). For example: 'Sat, 8 May 2010 16.03.09 +0200'
+_rfc822_dotted_time = re.compile("\w+, ?\d{1,2} \w+ \d\d(\d\d)? \d\d?\.\d\d?\.\d\d?.*")
+
+
+def _munge(s):
+    s = s.decode('latin-1')  # parsedate_tz only works with strings
+    if _rfc822_dotted_time.match(s):
+        return s.replace(".", ":")
+    return s
+
+
+def format_criteria_date(dt):
+    """Format a date or datetime instance for use in IMAP search criteria.
+    """
+    out = '%02d-%s-%d' % (dt.day, _SHORT_MONTHS[dt.month], dt.year)
+    return out.encode('ascii')
